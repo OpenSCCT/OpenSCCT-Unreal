@@ -14,6 +14,7 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Engine/GameInstance.h"
+#include "Online/ScctMapFolders.h"
 #include "OpenSCCT.h"
 #include "Play/ScctAudioMix.h"
 #include "Play/ScctAudioOutput.h"
@@ -1165,7 +1166,8 @@ UAudioComponent* UScctAudioSubsystem::AcquireComponent()
 
 void UScctAudioSubsystem::LoadZones(const FString& Map)
 {
-	const FString Path = ContentRoot / TEXT("svmap") / Map / TEXT("audio/audio.json");
+	const FString Folder = ScctMapFolders::FolderOf(Map);
+	const FString Path = (Folder.IsEmpty() ? ContentRoot / TEXT("svmap") / Map : Folder) / TEXT("audio/audio.json");
 	FString Text;
 	TSharedPtr<FJsonObject> Root;
 	if (!FFileHelper::LoadFileToString(Text, *Path) || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Root) || !Root.IsValid())
@@ -1302,7 +1304,9 @@ FName UScctAudioSubsystem::FindDrawnBone(const AScctPawnProxy& Proxy, int32 Bone
 
 FString UScctAudioSubsystem::GetFilePath(int32 FileId)
 {
-	return ContentRoot / GetName(FileId);
+	// A map outside the content folder (a downloaded pack, a custom map) has its files named in full.
+	const FString& Name = GetName(FileId);
+	return FPaths::IsRelative(Name) ? ContentRoot / Name : Name;
 }
 
 void UScctAudioSubsystem::LogVoice(const TCHAR* What, const FVoice& Voice, const TCHAR* Extra) const

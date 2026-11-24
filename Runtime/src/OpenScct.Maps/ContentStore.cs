@@ -92,7 +92,27 @@ public sealed partial class ContentStore
     /// <summary>Browser mirror paths may resolve against Source; normal desktop indexes require absolute HTTPS URLs.</summary>
     public bool AllowRelativeDownloads { get; init; }
 
-    private ContentIndex ReadIndex(string json) => ContentIndex.Parse(json, AllowRelativeDownloads ? new Uri(Source) : null).PublicDownloads();
+    /// <summary>
+    /// Maps of the index a client may download although they have no community distribution record: the enhanced maps
+    /// whose cooked levels its release bundles, which need their simulation files from the index. Null: none.
+    /// </summary>
+    public Func<ContentMap, bool>? AllowBundledMap { get; init; }
+
+    /// <summary>The map may be downloaded from the index by this store.</summary>
+    public bool MayDownload(ContentMap map) => map.CanDistribute || IsBundled(map);
+
+    private bool IsBundled(ContentMap map) =>
+        AllowBundledMap is { } allow && map.Full is not null && map.Sim is not null && map.SteamRecipe is null &&
+        !SteamVersusMaps.Contains(map.Code) && allow(map);
+
+    private ContentIndex ReadIndex(string json)
+    {
+        ContentIndex parsed = ContentIndex.Parse(json, AllowRelativeDownloads ? new Uri(Source) : null);
+        ContentIndex reviewed = parsed.PublicDownloads();
+        if (AllowBundledMap is null) return reviewed;
+        ContentMap[] bundled = parsed.Maps.Where(map => !map.CanDistribute && IsBundled(map)).Select(map => map with { BotNavigation = null }).ToArray();
+        return bundled.Length == 0 ? reviewed : reviewed with { Maps = [.. reviewed.Maps, .. bundled] };
+    }
 
     /// <summary>The installed packs.</summary>
     public IReadOnlyList<InstalledContent> Installed()
@@ -198,7 +218,7 @@ public sealed partial class ContentStore
             throw new InvalidDataException($"The map code {map.Code} is not a valid folder name.");
         }
 
-        if (!map.CanDistribute)
+        if (!MayDownload(map))
             throw new InvalidDataException("This map archive has no matching community distribution record.");
 
         SemaphoreSlim busy = Busy(map.Code);

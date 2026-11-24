@@ -145,7 +145,6 @@ const FScctEquipmentModel* FScctEquipmentModels::Find(const FScctEquipmentApi& A
 	const FString StockPrefix = TEXT("/Game/Imported/Chars/");
 	const bool bImportedStock = bOverride && AssetPath.StartsWith(StockPrefix);
 	USkeletalMesh* Mesh = bOverride && !bImportedStock ? LoadObject<USkeletalMesh>(nullptr, *AssetPath, nullptr, LOAD_NoWarn) : nullptr;
-	const bool bCookedOverride = Mesh != nullptr;
 	if (bImportedStock)
 	{
 		TArray<FString> Segments;
@@ -223,7 +222,7 @@ const FScctEquipmentModel* FScctEquipmentModels::Find(const FScctEquipmentApi& A
 	Model->Mesh.Reset(Mesh);
 
 	// The file's other meshes: everything skinned in the same folder that shares the skeleton.
-	if (IAssetRegistry* Registry = IAssetRegistry::Get(); bCookedOverride && Registry)
+	if (IAssetRegistry* Registry = IAssetRegistry::Get(); ScctRuntimeSkins::IsCooked(Mesh) && Registry)
 	{
 		const FString Folder = FPackageName::GetLongPackagePath(Mesh->GetPackage()->GetName());
 		Registry->ScanPathsSynchronous({ Folder });

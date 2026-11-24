@@ -180,6 +180,26 @@ if ($provenance.Count -gt 0) {
 }
 if ($CheckContentOnly) { return }
 
+# --- Bundled maps --------------------------------------------------------------------------------------------------
+# The enhanced maps: every level the release machine imported into Content/Imported/Maps/<Map>/<Map>.umap is cooked
+# (DirectoriesToAlwaysCook in Config/DefaultGame.ini) and shipped, with the characters, weapons and effects imported
+# under Content/Imported/Chars and Content/Imported/Fx. Content/Imported is git-ignored local import output.
+$importedRoot = Join-Path $repo 'Content/Imported'
+$importedMaps = Join-Path $importedRoot 'Maps'
+$bundledMaps = @(Get-ChildItem -LiteralPath $importedMaps -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne 'Hub' -and (Test-Path -LiteralPath (Join-Path $_.FullName "$($_.Name).umap")) } | ForEach-Object Name | Sort-Object)
+if ($bundledMaps.Count -eq 0) {
+    Fail "no imported maps in $importedMaps (no <Map>\<Map>.umap): run Tools/Import/Import-Map.ps1 on this machine first"
+}
+foreach ($folder in 'Chars', 'Fx') {
+    if (-not (Get-ChildItem -LiteralPath (Join-Path $importedRoot $folder) -Recurse -File -Filter '*.uasset' -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        Fail "Content/Imported/$folder is empty: run Tools/Import/Import-Characters.ps1 and Tools/Effects/Build-EffectAssets.ps1 first"
+    }
+}
+$mapsToCook = @($bundledMaps)
+if (Test-Path -LiteralPath (Join-Path $importedMaps 'Hub/Hub.umap')) { $mapsToCook += 'Hub' }
+Write-Host "Bundling $($bundledMaps.Count) imported maps: $($bundledMaps -join ', ')"
+
 # --- Version -------------------------------------------------------------------------------------------------------
 $gameIni = Get-Content -LiteralPath (Join-Path $repo 'Config/DefaultGame.ini') -Raw
 $projectVersion = [regex]::Match($gameIni, '(?m)^ProjectVersion=(\S+)\s*$').Groups[1].Value
@@ -365,7 +385,10 @@ try {
         '-platform=Win64', "-clientconfig=$Configuration", "-target=$target", '-nocompileeditor',
         '-cook', '-stage', '-pak', '-iostore', '-compressed', '-nodebuginfo',
         '-archive', "-archivedirectory=$archive",
-        '-MapsToCook=/Game/OpenSCCT/Maps/L_FrontEnd+/Game/OpenSCCT/RuntimeMap/L_RuntimeMap'
+        # A map list on the command line replaces MapsToCook in Config/DefaultGame.ini, hence the front end and the
+        # runtime level (which builds every map without an imported level from the Steam conversion) too.
+        ('-MapsToCook=' + ((@('/Game/OpenSCCT/Maps/L_FrontEnd', '/Game/OpenSCCT/RuntimeMap/L_RuntimeMap') +
+            @($mapsToCook | ForEach-Object { "/Game/Imported/Maps/$_/$_" })) -join '+'))
     )
     if ($Configuration -eq 'Shipping') { $uatArgs += '-distribution' }
     & $uat @uatArgs *> (Join-Path $Out 'uat.log')
@@ -385,7 +408,7 @@ try {
     if ($madeDotNet -and (Test-Path -LiteralPath $dotNetFolder)) { Remove-Item -LiteralPath $dotNetFolder -Recurse -Force }
 }
 
-& (Join-Path $PSScriptRoot 'Test/Assert-ReleaseContent.ps1') -Stage $staged -OpenScct $runtimeRoot -Engine $Engine -Report (Join-Path $Out 'cook-audit.json')
+& (Join-Path $PSScriptRoot 'Test/Assert-ReleaseContent.ps1') -Stage $staged -OpenScct $runtimeRoot -Engine $Engine -Report (Join-Path $Out 'cook-audit.json') -ImportedMaps $mapsToCook
 # Map pak cooks are for local development. Release builds load player-prepared maps at runtime
 # and use the default cook configuration, with a single project chunk.
 $stagedPaks = Join-Path $staged "$target/Content/Paks"
@@ -477,7 +500,7 @@ $info = [ordered]@{
     gameExecutable  = "$target/Binaries/Win64/$gameExe"
     runtimeTree     = $runtimeTree
     contentSource   = 'local-steam'
-    bundledMaps     = @()
+    bundledMaps     = @($bundledMaps)
     built          = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     entries         = $entries
     files           = $files

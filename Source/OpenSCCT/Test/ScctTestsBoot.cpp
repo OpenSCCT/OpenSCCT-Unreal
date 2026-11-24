@@ -29,7 +29,7 @@ namespace
 			{
 				const FString Relative = FString(TEXT("shared/chars")) / (FString(ModelName) + TEXT(".glb"));
 				USkeletalMesh* Mesh = ScctRuntimeSkins::Load(Relative);
-				if (!Mesh || Mesh->GetRefSkeleton().GetNum() < 2 || ScctRuntimeSkins::SourceOf(Mesh).IsEmpty())
+				if (!Mesh || Mesh->GetRefSkeleton().GetNum() < 2 || ScctRuntimeSkins::ContentFileOf(Mesh).IsEmpty())
 					return FScctTestResult::Fail(TEXT("Missing local skeleton for ") + Relative);
 				const FSkeletalMeshRenderData* Data = Mesh->GetResourceForRendering();
 				if (!Data || !Data->LODRenderData.Num() || !Data->LODRenderData[0].GetNumVertices()

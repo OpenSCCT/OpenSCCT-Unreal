@@ -40,7 +40,7 @@ bool FScctOutfitVision::Mark(UPoseableMeshComponent& Body, int32 Kind, bool bWet
 		TArray<UTexture2D*> Masks;
 		bool bHasMask = false;
 		const FString Outfit = UScctPawnLookSubsystem::OutfitModelPath(Kind);
-		const bool bWearsModel = !Outfit.IsEmpty() && FPaths::IsSamePath(ScctRuntimeSkins::SourceOf(Mesh), Outfit);
+		const bool bWearsModel = !Outfit.IsEmpty() && FPaths::IsSamePath(ScctRuntimeSkins::ContentFileOf(Mesh), Outfit);
 		for (const FSkeletalMaterial& Slot : Mesh->GetMaterials())
 		{
 			const FString Name = Slot.MaterialInterface ? Slot.MaterialInterface->GetName() : Slot.MaterialSlotName.ToString();

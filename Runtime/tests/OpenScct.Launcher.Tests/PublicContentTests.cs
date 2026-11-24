@@ -34,6 +34,24 @@ public sealed class PublicContentTests
     }
 
     [Fact]
+    public void OnlyTheReleasesBundledEnhancedMapsBypassTheReview()
+    {
+        var enhanced = Approved with { Id = "stock/AquaE", Code = "AquaE", Distribution = null };
+        var other = enhanced with { Id = "stock/PolaE", Code = "PolaE" };
+        var retail = enhanced with { Id = "stock/AQU03", Code = "AQU03" };
+        var store = new ContentStore(Path.Combine(Path.GetTempPath(), "scct-bundled-" + Guid.NewGuid()), new HttpClient(new RejectNetwork()))
+        {
+            AllowBundledMap = map => map.Code is "AquaE" or "AQU03",
+        };
+        Assert.True(store.MayDownload(enhanced));
+        Assert.False(store.MayDownload(other));
+        Assert.False(store.MayDownload(retail));
+        Assert.False(store.MayDownload(enhanced with { Sim = null }));
+        Assert.True(new ContentStore(store.Root, new HttpClient(new RejectNetwork())).MayDownload(Approved));
+        Assert.False(new ContentStore(store.Root, new HttpClient(new RejectNetwork())).MayDownload(enhanced));
+    }
+
+    [Fact]
     public async Task UnreviewedDirectInstallsStopBeforeNetworkOrFilesystemWrites()
     {
         using var dir = new TempDir();

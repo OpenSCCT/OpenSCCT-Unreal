@@ -4,7 +4,9 @@ param(
     [Parameter(Mandatory)][string]$Stage,
     [Parameter(Mandatory)][string]$OpenScct,
     [string]$Engine = $(if ($env:UE_ROOT) { $env:UE_ROOT } else { 'F:\UE_5.8' }),
-    [string]$Report
+    [string]$Report,
+    # The imported levels the release bundles (Content/Imported/Maps/<Map>/<Map>.umap).
+    [string[]]$ImportedMaps = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +27,7 @@ foreach ($path in $pluginAssets) {
     if ($path -match '\.(uasset|umap)$') { [void]$projectPackages.Add("Plugins/glTFRuntime/" + ($path -replace '\.(uasset|umap)$', '')) }
 }
 $cooked = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$importedSeen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($manifest in 'Manifest_UFSFiles_Win64.txt', 'Manifest_NonUFSFiles_Win64.txt') {
     $file = Join-Path $stageRoot $manifest
@@ -41,6 +44,9 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $stageRoot $target) -Rec
 foreach ($path in $seen) {
     if ($path -notlike "$target/*") { continue }
     $relative = $path.Substring($target.Length + 1)
+    # The cooked editor imports under Content/Imported ship with the release. Loose converted files never do.
+    $cookedImport = $relative -match '(?i)^Content/Imported/(?:Maps|Chars|Fx)/.+\.(?:uasset|umap|uexp|ubulk|uptnl)$'
+    if ($cookedImport) { [void]$importedSeen.Add($relative); continue }
     if ($relative -match '(?:^|/)(?:Imported|shared|svmap|\.content|packs)(?:/|$)' -and $relative -notlike 'Binaries/DotNet/*') {
         throw "Retail or converted content staged at $path."
     }
@@ -69,6 +75,15 @@ foreach ($path in $seen) {
 foreach ($required in 'Content/OpenSCCT/Maps/L_FrontEnd', 'Content/OpenSCCT/RuntimeMap/L_RuntimeMap') {
     if (!$seen.Contains("$target/$required.umap")) { throw "Missing required cooked level $required." }
 }
+
+$unbundled = @($ImportedMaps | Where-Object { !$importedSeen.Contains("Content/Imported/Maps/$_/$_.umap") })
+if ($unbundled.Count) { throw "Imported maps missing from the cook (check DirectoriesToAlwaysCook=/Game/Imported/Maps): $($unbundled -join ', ')." }
+foreach ($folder in 'Chars', 'Fx') {
+    if (!($importedSeen | Where-Object { $_ -like "Content/Imported/$folder/*" } | Select-Object -First 1)) {
+        throw "No cooked Content/Imported/$folder assets in the release."
+    }
+}
+Write-Host "Staged $($importedSeen.Count) cooked files from /Game/Imported ($($ImportedMaps.Count) imported levels)."
 
 if (!$seen.Contains("$target/Plugins/glTFRuntime/Content/M_glTFRuntimeBase.uasset")) {
     throw 'Missing cooked glTFRuntime material for local skeletal meshes.'

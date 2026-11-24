@@ -121,6 +121,7 @@ public static class ContentPacks
             s_store = new ContentStore(root, Http)
             {
                 ResolveCommunityBuilder = () => CommunityBuildContext.ResolveUnreal(BridgeSession.UnrealContentDirectory, BridgeSession.UnrealToolsDirectory),
+                AllowBundledMap = map => BundledMaps.Contains(map.Code),
             };
             s_storeRoot = root;
         }
@@ -244,8 +245,8 @@ public static class ContentPacks
     public static DownloadJob Download(ContentMap map)
     {
         ArgumentNullException.ThrowIfNull(map);
-        if (!map.CanDistribute)
-            return new DownloadJob(map) { Error = "Only reviewed community content is available for download." };
+        if (!Store.MayDownload(map))
+            return new DownloadJob(map) { Error = "Only reviewed community content and this release's enhanced maps are available for download." };
         if (!ContentPaths.SteamBaseReady)
             return new DownloadJob(map) { Error = "Use Set up from Steam in OpenSCCT Unreal first." };
         DownloadJob job;

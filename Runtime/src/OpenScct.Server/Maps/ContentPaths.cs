@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using OpenScct.Maps;
 
 namespace OpenScct.Server;
@@ -71,6 +72,10 @@ public static class ContentPaths
 
             // Listed even before the first download, so a catalog made now finds maps downloaded later.
             roots.Add(Path.Combine(PacksFolder, "svmap"));
+            // The Unreal client also reads the maps the OpenSCCT launcher already downloaded from OpenSCCT-Content
+            // (%LOCALAPPDATA%\OpenSCCT\packs): the enhanced maps whose cooked levels the release bundles.
+            if (LocalBaseOnly && !IncludeGodotOptionalMaps && Existing(Path.Combine(DefaultPacksFolder, "svmap")) is { } launcherMaps &&
+                !roots.Contains(launcherMaps, StringComparer.OrdinalIgnoreCase)) roots.Add(launcherMaps);
             // Flatpak keeps its own writable packs and can read maps installed by the host launcher.
             if (IncludeGodotOptionalMaps && Existing(Environment.GetEnvironmentVariable("OPENSCCT_GODOT_OPTIONAL_MAPS")) is { } hostMaps &&
                 !roots.Contains(hostMaps)) roots.Add(hostMaps);

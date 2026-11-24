@@ -1,6 +1,9 @@
 #include "Play/ScctRuntimeSkins.h"
 
 #include "Animation/AnimSequence.h"
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/IAssetRegistry.h"
+#include "Misc/PackageName.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
@@ -133,10 +136,73 @@ namespace
 		return Config;
 	}
 
+
+	// ---- cooked content ---------------------------------------------------------------------------------------
+	// A release cooks the characters, weapons and effects imported in the editor (Tools/Import/Import-Characters.ps1,
+	// Tools/Effects/Build-EffectAssets.ps1) under /Game/Imported. Those carry the editor's materials (glass, lenses,
+	// view-model sections) and are preferred. The Steam conversion's GLBs are read at run time only without them.
+	const TCHAR* const CookedChars = TEXT("/Game/Imported/Chars");
+	const TCHAR* const CookedFx = TEXT("/Game/Imported/Fx");
+
+	/** "pkg" and "mesh" of ".../shared/chars/<pkg>/<mesh>.glb", relative or absolute. */
+	bool SplitCharFile(const FString& Input, FString& OutPackage, FString& OutMesh)
+	{
+		FString File = Input;
+		FPaths::NormalizeFilename(File);
+		const FString Marker = TEXT("shared/chars/");
+		const int32 At = File.Find(Marker, ESearchCase::IgnoreCase);
+		if (At == INDEX_NONE || !File.EndsWith(TEXT(".glb"), ESearchCase::IgnoreCase)) return false;
+		TArray<FString> Parts;
+		File.Mid(At + Marker.Len()).ParseIntoArray(Parts, TEXT("/"));
+		if (Parts.Num() != 2) return false;
+		OutPackage = Parts[0];
+		OutMesh = FPaths::GetBaseFilename(Parts[1]);
+		return !OutPackage.IsEmpty() && !OutMesh.IsEmpty() && OutPackage == SafeName(OutPackage) && OutMesh == SafeName(OutMesh);
+	}
+
+	USkeletalMesh* CookedCharMesh(const FString& Input)
+	{
+		FString Package, Mesh;
+		if (!SplitCharFile(Input, Package, Mesh)) return nullptr;
+		const FString PackageName = FString::Printf(TEXT("%s/%s/%s/SkeletalMeshes/%s"), CookedChars, *Package, *Mesh, *Mesh);
+		return FPackageName::DoesPackageExist(PackageName)
+			? LoadObject<USkeletalMesh>(nullptr, *(PackageName + TEXT(".") + Mesh), nullptr, LOAD_NoWarn | LOAD_Quiet) : nullptr;
+	}
+
+	/** A name reduced to lower-case letters and digits: how the imported effect meshes match the game's object paths. */
+	FString NameKey(const FString& Name)
+	{
+		FString Key;
+		for (const TCHAR Character : Name)
+			if (FChar::IsAlnum(Character)) Key.AppendChar(FChar::ToLower(Character));
+		return Key;
+	}
+
+	const TMap<FString, FSoftObjectPath>& CookedFxMeshes()
+	{
+		static TMap<FString, FSoftObjectPath> Found;
+		static bool bScanned = false;
+		if (!bScanned)
+		{
+			bScanned = true;
+			if (IAssetRegistry* Registry = IAssetRegistry::Get())
+			{
+				Registry->ScanPathsSynchronous({ CookedFx }, false);
+				TArray<FAssetData> Assets;
+				Registry->GetAssetsByPath(FName(CookedFx), Assets, true);
+				for (const FAssetData& Asset : Assets)
+					if (Asset.AssetClassPath == UStaticMesh::StaticClass()->GetClassPathName())
+						Found.Add(NameKey(Asset.AssetName.ToString()), Asset.GetSoftObjectPath());
+			}
+			UE_LOG(LogOpenSCCT, Log, TEXT("Effects: %d cooked effect meshes under %s"), Found.Num(), CookedFx);
+		}
+		return Found;
+	}
 }
 
 USkeletalMesh* ScctRuntimeSkins::Load(const FString& Input)
 {
+	if (USkeletalMesh* Cooked = CookedCharMesh(Input)) return Cooked;
 	const FString File = Absolute(Input);
 	if (File.IsEmpty() || !FPaths::FileExists(File)) return nullptr;
 	if (const FModel* Entry = Models.Find(File); Entry && Entry->Mesh.IsValid()) return Entry->Mesh.Get();
@@ -313,6 +379,9 @@ UStaticMesh* ScctRuntimeSkins::LoadEffectMesh(const FString& ObjectPath)
 	FString Object;
 	if (!Tail.Split(TEXT("."), nullptr, &Object, ESearchCase::IgnoreCase, ESearchDir::FromEnd)) Object = Tail;
 	if (Object.IsEmpty() || Object != SafeName(Object)) return nullptr;
+	// "SGameplayObjects.Gadgets.frag_grenade" was imported as the mesh "SGameplayObjects_frag_grenade".
+	if (const FSoftObjectPath* Cooked = CookedFxMeshes().Find(NameKey(Package + Object)))
+		if (UStaticMesh* Mesh = Cast<UStaticMesh>(Cooked->TryLoad())) return Mesh;
 	const FString File = Absolute(TEXT("shared/fx/meshes") / (Package + TEXT(".glb")));
 	if (File.IsEmpty() || !FPaths::FileExists(File)) return nullptr;
 	const FString MeshName = Package + TEXT("_") + Object;
@@ -336,6 +405,12 @@ UStaticMesh* ScctRuntimeSkins::LoadEffectMesh(const FString& ObjectPath)
 
 void ScctRuntimeSkins::LoadEffectMeshes(TArray<UStaticMesh*>& Out)
 {
+	if (!CookedFxMeshes().IsEmpty())
+	{
+		for (const TPair<FString, FSoftObjectPath>& Asset : CookedFxMeshes())
+			if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.Value.TryLoad())) Out.Add(Mesh);
+		return;
+	}
 	const FString Directory = Absolute(TEXT("shared/fx/meshes"));
 	if (Directory.IsEmpty()) return;
 	TArray<FString> Files;
@@ -366,9 +441,32 @@ FString ScctRuntimeSkins::SourceOf(const USkinnedAsset* Mesh)
 	return {};
 }
 
+bool ScctRuntimeSkins::IsCooked(const UObject* Asset)
+{
+	return Asset && Asset->GetOutermost()->GetName().StartsWith(TEXT("/Game/"));
+}
+
+FString ScctRuntimeSkins::ContentFileOf(const USkinnedAsset* Mesh)
+{
+	FString Source = SourceOf(Mesh);
+	if (!Source.IsEmpty() || !Mesh) return Source;
+	// /Game/Imported/Chars/<Package>/<Mesh>/SkeletalMeshes/<Mesh> stands for shared/chars/<Package>/<Mesh>.glb.
+	TArray<FString> Parts;
+	Mesh->GetOutermost()->GetName().ParseIntoArray(Parts, TEXT("/"));
+	const FString Root = FOpenSCCTModule::FindContentRoot();
+	if (Parts.Num() == 7 && Parts[0] == TEXT("Game") && Parts[1] == TEXT("Imported") && Parts[2] == TEXT("Chars") && !Root.IsEmpty())
+		return Root / TEXT("shared/chars") / Parts[3] / (Parts[4] + TEXT(".glb"));
+	return {};
+}
+
 UMaterialInterface* ScctRuntimeSkins::LoadEquipmentSkin(const FString& Package, const FString& Texture)
 {
 	if (Package != SafeName(Package) || Texture != SafeName(Texture)) return nullptr;
+	// import_characters.py makes MI_<texture package>_<texture> beside the package's meshes.
+	const FString CookedSkin = FString::Printf(TEXT("%s/%s/Skins/MI_%s"), CookedChars, *Package, *Texture);
+	if (FPackageName::DoesPackageExist(CookedSkin))
+		if (auto* Material = LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("%s.MI_%s"), *CookedSkin, *Texture), nullptr, LOAD_NoWarn | LOAD_Quiet))
+			return Material;
 	const FString File = Absolute(TEXT("shared/chars") / Package / TEXT("textures") / (Texture + TEXT(".png")));
 	if (File.IsEmpty() || !FPaths::FileExists(File)) return nullptr;
 	UPackage* Owner = PackageFor(File);

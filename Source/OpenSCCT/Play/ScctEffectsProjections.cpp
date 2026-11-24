@@ -11,6 +11,7 @@
 #include "Engine/Texture2D.h"
 #include "ImageUtils.h"
 #include "Misc/Paths.h"
+#include "Misc/PackageName.h"
 #include "GameFramework/Actor.h"
 #include "Hud/ScctVisionSubsystem.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -42,7 +43,13 @@ UTexture2D* UScctEffectsSubsystem::FindProjectionTexture(int32 AssetId)
 	const FString& Name = GetName(AssetId);
 	const FString Root = FOpenSCCTModule::FindContentRoot();
 	UTexture2D* Texture = nullptr;
-	if (!Root.IsEmpty() && !Name.IsEmpty() && Name == FPaths::GetCleanFilename(Name))
+	// The release's cooked copy (Tools/Effects/Build-EffectAssets.ps1) first, the Steam conversion's picture after.
+	const FString Cooked = FString::Printf(TEXT("/Game/Imported/Fx/Textures/%s"), *Name);
+	if (!Name.IsEmpty() && FPackageName::IsValidLongPackageName(Cooked) && FPackageName::DoesPackageExist(Cooked))
+	{
+		Texture = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("%s.%s"), *Cooked, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	}
+	if (!Texture && !Root.IsEmpty() && !Name.IsEmpty() && Name == FPaths::GetCleanFilename(Name))
 	{
 		const FString Folder = Root / TEXT("shared/fx/textures");
 		const FString File = FPaths::ConvertRelativePathToFull(Folder, Name + TEXT(".png"));

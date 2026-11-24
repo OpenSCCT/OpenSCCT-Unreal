@@ -74,6 +74,17 @@ public static class WeaponRules
         return SvmMath.Min(a, MaxDispersion);
     }
 
+    /// <summary>
+    /// The moving ADS penalty (OpenSCCT, not in the original): extra spread while aiming down sights or through a scope,
+    /// <c>MaxDispersion * 0.25 * clamp(|V| / 96.25, 0, 1)</c>. A gun's MaxDispersion is its accuracy rating, so a loose,
+    /// hard-hitting gun such as the AK-47 loses more while moving than an accurate one; standing still costs nothing.
+    /// </summary>
+    public static float AdsMovingPenalty(float Speed, float MaxDispersion)
+    {
+        float moving = SvmMath.Clamp(Speed / K.AdsMovingPenaltyFullSpeed, 0f, 1f);
+        return MaxDispersion * K.AdsMovingPenaltyScale * moving;
+    }
+
     /// <summary>GetNbBulletsFromROF: Single 1, Burst min(3, clip), Auto the whole clip.</summary>
     public static int BulletsForMode(SRateOfFireMode Mode, int ClipAmmo) => Mode switch
     {

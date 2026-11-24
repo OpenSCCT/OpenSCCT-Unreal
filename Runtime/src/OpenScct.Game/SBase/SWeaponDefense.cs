@@ -347,7 +347,7 @@ public partial class SWeaponDefense
             bool predicted = PredictsImpacts && FirePrediction.IsOn(this);
             if (predicted)
             {
-                PredictTraceFire(shot, AimingThroughScope ? 0f : GetAccuracy());
+                PredictTraceFire(shot, GetAccuracy());
             }
 
             // The owner hears the shot with its predicted recoil and flash, including on the first rifle shot.
@@ -371,7 +371,7 @@ public partial class SWeaponDefense
             SPlayerController.IncStat(pc, static s => s.ShotsFired++);
         }
 
-        DispersionActuelle = AimingThroughScope ? 0f : GetAccuracy();
+        DispersionActuelle = GetAccuracy();
         TraceFire(DispersionActuelle, 0f, 0f);
         PlayShotSound();
         if (Dummy is { } dummy)
@@ -395,13 +395,24 @@ public partial class SWeaponDefense
     public bool InScope => bCanSnipe && OwnerPC?.GetStateName() == CNAME_s_Binoculars_Def;
     private bool AimingThroughScope => InScope || this is Svm.PrecisionRifle { AimRequested: true };
 
-    /// <summary>GetAccuracy (native 1286): the spread of the shot (rule 13).</summary>
+    /// <summary>True while the owner aims down sights or looks through a scope.</summary>
+    public bool AimingDownSights => AimRequested || InScope;
+
+    /// <summary>
+    /// GetAccuracy (native 1286): the spread of the shot (rule 13). A scope fires dead centre and aimed rifles tighten
+    /// to 45%; any aimed or scoped gun then adds the moving ADS penalty (WeaponRules.AdsMovingPenalty).
+    /// </summary>
     [UcNative("ASWeaponDefense::execGetAccuracy", Exe = 0x10abcfc0)]
     [Uc("SBase.SWeaponDefense.GetAccuracy", Sha1 = "067d5096f219c64b53bb1c7d5e3754285b565a47")]
     [PortOf("nat:SBase.SWeaponDefense.GetAccuracy", Spec = "spec/equipment/merc-rifle.md#rules")]
-    public float GetAccuracy() =>
-        WeaponRules.Accuracy(Instigator?.Velocity.Size() ?? 0f, MinDispersion, MaxDispersion, BulletInARow) *
-        (this is Svm.MercRifle { AimRequested: true } ? .45f : 1f);
+    public float GetAccuracy()
+    {
+        float speed = Instigator?.Velocity.Size() ?? 0f;
+        float spread = AimingThroughScope ? 0f :
+            WeaponRules.Accuracy(speed, MinDispersion, MaxDispersion, BulletInARow) *
+            (this is Svm.MercRifle { AimRequested: true } ? .45f : 1f);
+        return AimingDownSights ? spread + WeaponRules.AdsMovingPenalty(speed, MaxDispersion) : spread;
+    }
 
     /// <summary>
     /// The server trace of one bullet (rule 10): spread in a square around the aim, the ray from the gun or the eye,

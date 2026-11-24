@@ -22,6 +22,27 @@ public sealed class WeaponRulesTests
         Assert.Equal(expected, WeaponRules.DistanceDamage(Rifle(), distance));
     }
 
+    [Theory]
+    [InlineData(0f, 0f)]
+    [InlineData(-10f, 0f)]
+    [InlineData(48.125f, 0.11f)]
+    [InlineData(96.25f, 0.22f)]
+    [InlineData(385f, 0.22f)]
+    public void TheMovingAdsPenaltyGrowsWithSpeedUpToTheAimedWalk(float speed, float expected)
+    {
+        Assert.Equal(expected, WeaponRules.AdsMovingPenalty(speed, MercRifles.All[1].MaxSpread), 4);
+    }
+
+    [Fact]
+    public void TheLooseHardHittingAkLosesMoreWhileMovingThanTheAccurateRifles()
+    {
+        float Penalty(string id) => WeaponRules.AdsMovingPenalty(K.AdsMovingPenaltyFullSpeed,
+            MercRifles.Find("Svm." + id)!.MaxSpread);
+        Assert.True(Penalty("AK47") > Penalty("M4A1S"));
+        Assert.True(Penalty("AK47") > Penalty("Famas"));
+        Assert.Equal(0.88f / 0.58f, Penalty("AK47") / Penalty("M4A1S"), 3);
+    }
+
     [Fact]
     public void DamageKeepsFallingBeyondTheFormerFarBand()
     {

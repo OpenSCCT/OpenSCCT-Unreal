@@ -88,6 +88,12 @@ public static partial class K
     [Provenance(ProvenanceKind.Decoded, "GetAccuracy burst term 0.1 per bullet in a row (prior decode)")]
     public const float AccuracyBurstTerm = 0.1f;
 
+    [Provenance(ProvenanceKind.Estimated, "OpenSCCT tuning, moving ADS penalty: the share of MaxDispersion added at full aimed walking speed")]
+    public const float AdsMovingPenaltyScale = 0.25f;
+
+    [Provenance(ProvenanceKind.Estimated, "OpenSCCT tuning, moving ADS penalty: full at the merc's aimed walk, RunningSpeed 385 x AimSpeedScale 0.25")]
+    public const float AdsMovingPenaltyFullSpeed = 385f * 0.25f;
+
     [Provenance(ProvenanceKind.Decoded, "NativeTickSWeaponDefense / s_IdleGrabbed.Tick decay step 0.02 s")]
     public const float BulletInARowDecay = 0.02f;
 

@@ -226,6 +226,10 @@ native TraceFire override (nat:SBase.SWeaponDefense_Shotgun.TraceFire at 0x10ab9
     On the server the velocity is the server's pawn velocity when the RPC is processed, and BulletInARow is the
     client's count carried by the RPC. Still and not firing: 0.15. Fully open (0.55 above Min) at 240 uu/s or
     after 4 shots in a row standing still; capped at 0.7. The HUD reticle frame is `trunc(10 * disp / (Max - Min))`.
+    OpenSCCT addition (not in the original): while the owner aims down sights (`AimRequested`) or is in the scope,
+    `GetAccuracy` adds a moving ADS penalty `MaxDispersion * 0.25 * clamp(|V| / 96.25, 0, 1)` (96.25 is the aimed
+    walk, RunningSpeed 385 x AimSpeedScale 0.25). It applies after the authored rifles' 0.45 ADS factor and on top of
+    the scope's zero spread, so standing still is unchanged and every gun's penalty follows its MaxDispersion.
 14. **s_Selected.Tick** (client): run the global native tick; if `WeaponLoaded == 0`, go to `s_IdleGrabbed` when
     channel 0 plays FirstGrbdStBg2, else `s_IdleInHolster`, and stop. Otherwise drive the idle/walk view-model
     blend (cosmetic: `side = Normal(Velocity) . (vector(Rotation) x Z) - aTurnPrevious * 0.001`, clamped, channels
@@ -375,6 +379,7 @@ only play view-model clips and toggle the laser; they are listed in INDEX.md as 
 | Burst size | 3 | rounds | decoded | GetNbBulletsFromROF |
 | Speed term | 1/600 | per uu/s | decoded (prior) | GetAccuracy 0x10abcfe0 |
 | Burst term | 0.1 | per bullet | decoded (prior) | GetAccuracy |
+| Moving ADS penalty | 0.25 x MaxDispersion at 96.25 uu/s | spread | OpenSCCT tuning | WeaponRules.AdsMovingPenalty |
 | Decay step | 0.02 | s | decoded | s_IdleGrabbed.Tick, native tick |
 | Sound radii | 500 shot / 60 others | uu | decoded | ServerFireWeapon, Fire, Reload |
 | Reload message | 3 s (2 s full reload), priority 2 | s | decoded | s_Reloading, s_FullReloading |

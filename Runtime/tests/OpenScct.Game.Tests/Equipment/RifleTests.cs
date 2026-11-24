@@ -388,4 +388,40 @@ public sealed class RifleTests
         Assert.Equal(0, rifle.BulletInARow);
         Assert.Equal(0.15f, rifle.GetAccuracy(), 4);
     }
+    private static float AimedSpread(SWeaponDefense weapon, float speed)
+    {
+        (_, SPlayerController pc, SWeaponDefense gun) = Merc(weapon);
+        pc.Pawn!.SetPhysics(EPhysics.PHYS_None);
+        pc.Pawn.Velocity = new FVector(speed, 0f, 0f);
+        gun.AimRequested = true;
+        return gun.GetAccuracy();
+    }
+
+    [Fact]
+    public void AimingDownSightsWhileStandingStillAddsNoPenalty()
+    {
+        Assert.Equal(0.18f * 0.45f, AimedSpread(new AK47(), 0f), 4);
+        Assert.Equal(0f, AimedSpread(new BoltRifle(), 0f), 4);
+    }
+
+    [Fact]
+    public void MovingWhileAimingDownSightsWidensEveryGunsSpread()
+    {
+        float walk = K.AdsMovingPenaltyFullSpeed;
+        float akStill = AimedSpread(new AK47(), 0f), akMoving = AimedSpread(new AK47(), walk);
+        float m4Still = AimedSpread(new M4A1S(), 0f), m4Moving = AimedSpread(new M4A1S(), walk);
+        Assert.Equal((0.18f + walk / 600f) * 0.45f + 0.88f * 0.25f, akMoving, 4);
+        Assert.True(akMoving - akStill > m4Moving - m4Still);
+        Assert.Equal(0.7f * 0.25f, AimedSpread(new BoltRifle(), walk), 4);
+        Assert.True(AimedSpread(new PumpShotgun(), walk) > AimedSpread(new PumpShotgun(), 0f));
+    }
+
+    [Fact]
+    public void HipFireKeepsTheOriginalSpread()
+    {
+        (_, SPlayerController pc, SWeaponDefense ak) = Merc(new AK47());
+        pc.Pawn!.SetPhysics(EPhysics.PHYS_None);
+        pc.Pawn.Velocity = new FVector(K.AdsMovingPenaltyFullSpeed, 0f, 0f);
+        Assert.Equal(0.18f + K.AdsMovingPenaltyFullSpeed / 600f, ak.GetAccuracy(), 4);
+    }
 }

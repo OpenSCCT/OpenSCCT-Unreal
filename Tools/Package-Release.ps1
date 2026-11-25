@@ -543,11 +543,14 @@ Write-Host 'Zipping...'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [IO.Compression.ZipFile]::CreateFromDirectory($folder, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
 $zipSize = (Get-Item -LiteralPath $zip).Length
-if ($zipSize -gt $assetLimit) { Warn-Or-Fail ('the zip is {0:0.00} GB, over what one GitHub release asset may weigh' -f ($zipSize / 1GB)) }
+# The launcher installs from the file list and its per-file blobs, so a release may leave out a zip that is too big
+# for one GitHub asset. Each blob is still checked against the limit below.
+$uploadZip = $zipSize -le $assetLimit
+if (-not $uploadZip) { Write-Warning ('the zip is {0:0.00} GB, over what one GitHub release asset may weigh: the release installs through the launcher only' -f ($zipSize / 1GB)) }
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 $line = "$hash  $zipName`n"
 [IO.File]::WriteAllText("$zip.sha256", $line, $utf8)
-[IO.File]::WriteAllText((Join-Path $Out 'SHA256SUMS'), $line, $utf8)
+[IO.File]::WriteAllText((Join-Path $Out 'SHA256SUMS'), $(if ($uploadZip) { $line } else { '' }), $utf8)
 [IO.File]::WriteAllText((Join-Path $Out $launcherName), ($handshake | ConvertTo-Json) + "`n", $utf8)
 
 # --- Delta update files --------------------------------------------------------------------------------------------
@@ -671,6 +674,8 @@ $listPath = Join-Path $storeDir $listName
 [IO.File]::WriteAllText($listPath, ([ordered]@{ format = 1; version = $Version; commit = $commit; files = $listEntries } | ConvertTo-Json -Depth 6) + "`n", $utf8)
 [IO.File]::WriteAllText("$listPath.sha256", "$((Get-FileHash -LiteralPath $listPath -Algorithm SHA256).Hash.ToLowerInvariant())  $listName`n", $utf8)
 $uploads = @(Get-ChildItem -LiteralPath $storeDir -File | Where-Object { $_.Name -notlike '*-files.json*' })
+$heavy = @($uploads | Where-Object Length -gt $assetLimit | ForEach-Object Name)
+if ($heavy) { Warn-Or-Fail ("store files over what one GitHub release asset may weigh:`n  " + ($heavy -join "`n  ")) }
 Write-Host ('{0} files; {1} new blobs ({2:N1} MB), {3} patches ({4:N1} MB)' -f $listEntries.Count, $newBlobs.Count,
     ((($uploads | Where-Object Extension -ne '.osdiff') | Measure-Object Length -Sum).Sum / 1MB), @($jobs.Values | Where-Object { Test-Path -LiteralPath $_.Patch }).Count, ($patchBytes / 1MB))
 foreach ($b in $bases) {
@@ -695,7 +700,8 @@ $log = if ($LASTEXITCODE -eq 0 -and $previous) { git -C $repo log --no-merges "$
 $notes = @($title, '', "Includes the Unreal-owned simulation ($runtimeVersion) and local content setup.", '',
     '## Changes', '') + $log + @('', '## Maps', '',
     'Open the Unreal front end and choose Set up from Steam to build your local content.', '', '## Download', '',
-    'Download the Windows game ZIP, extract it and run OpenSCCTUnreal.exe. The Linux and Windows server archives run independently.')
+    $(if ($uploadZip) { 'Download the Windows game ZIP, extract it and run OpenSCCTUnreal.exe.' } else { 'Install and update through the OpenSCCT launcher: the Windows game is too large for a single download here.' }) +
+    ' The Linux and Windows server archives run independently.')
 Write-Text (Join-Path $Out 'notes.md') ($notes -join "`n")
 
 if (-not $Local) {
@@ -736,7 +742,7 @@ if (-not $Local -and $Repository) {
         "    }",
         "}",
         "gh release create v$Version -R $Repository --target $commit --draft --title '$title' --notes-file (Join-Path `$PSScriptRoot 'notes.md')$pre ``",
-        "    (Join-Path `$PSScriptRoot '$zipName') (Join-Path `$PSScriptRoot '$zipName.sha256') (Join-Path `$PSScriptRoot 'SHA256SUMS') (Join-Path `$PSScriptRoot '$launcherName') ``",
+        "    $(if ($uploadZip) { "(Join-Path `$PSScriptRoot '$zipName') (Join-Path `$PSScriptRoot '$zipName.sha256') " })(Join-Path `$PSScriptRoot 'SHA256SUMS') (Join-Path `$PSScriptRoot '$launcherName') ``",
         "    (Join-Path `$store '$listName') (Join-Path `$store '$listName.sha256') ``",
         "    (Join-Path `$PSScriptRoot '$($serverNames[0])') (Join-Path `$PSScriptRoot '$($serverNames[0]).sha256') ``",
         "    (Join-Path `$PSScriptRoot '$($serverNames[1])') (Join-Path `$PSScriptRoot '$($serverNames[1]).sha256')",

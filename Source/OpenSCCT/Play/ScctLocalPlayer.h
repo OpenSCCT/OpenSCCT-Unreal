@@ -35,4 +35,9 @@ class UScctGameConsole : public UConsole
 	GENERATED_BODY()
 public:
 	virtual void ConsoleCommand(const FString& Command) override;
+	/**
+	 * Shipping compiles the engine's list out (ALLOW_CONSOLE), so the line offered nothing as it was typed: there this
+	 * lists what ConsoleCommand runs, the game's console words and the settings keys. Other builds keep the engine's.
+	 */
+	virtual void BuildRuntimeAutoCompleteList(bool bForce = false) override;
 };

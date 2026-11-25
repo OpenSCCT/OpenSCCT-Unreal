@@ -11,6 +11,7 @@
 #include "Menu/SScctPadPanel.h"
 #include "Misc/StringOutputDevice.h"
 #include "Play/ScctConsoleCommands.h"
+#include "Settings/ScctSettingsConsole.h"
 #include "Widgets/SViewport.h"
 #if PLATFORM_WINDOWS
 #include "Windows/WindowsHWrapper.h"
@@ -138,6 +139,47 @@ void UScctGameConsole::ConsoleCommand(const FString& Command)
 		else ScctConsoleCommands::SayUnknown(*Line, Reply);
 	}
 	OutputText(Reply.TrimEnd());
+}
+
+void UScctGameConsole::BuildRuntimeAutoCompleteList(bool bForce)
+{
+#if ALLOW_CONSOLE
+	Super::BuildRuntimeAutoCompleteList(bForce);
+#else
+	if (!bForce)
+	{
+		bIsRuntimeAutoCompleteUpToDate = false;
+		return;
+	}
+	AutoCompleteList.Reset();
+	const FColor CommandColor(180, 180, 180);
+	auto Add = [this, &CommandColor](const FString& Command, const FString& Desc)
+	{
+		FAutoCompleteCommand& Entry = AutoCompleteList.AddDefaulted_GetRef();
+		Entry.Command = Command;
+		Entry.Desc = Desc;
+		Entry.Color = CommandColor;
+	};
+	// The console commands registered in Shipping are the game's own (ScctConsoleCommands.cpp): its Godot console words,
+	// Settings, Admin, AdminLogin and the Scct.* commands. Their help's first line describes each.
+	IConsoleManager::Get().ForEachConsoleObjectThatStartsWith(FConsoleObjectVisitor::CreateLambda(
+		[&Add](const TCHAR* Name, IConsoleObject* Object)
+		{
+			if (Object == nullptr || !Object->IsEnabled() || Object->AsCommand() == nullptr) return;
+			TArray<FString> Lines;
+			FString(Object->GetHelp()).ParseIntoArrayLines(Lines);
+			Add(Name, Lines.IsEmpty() ? FString() : Lines[0]);
+		}));
+	Add(TEXT("help"), TEXT("help [command|bots] - the commands, or one command's help."));
+	Add(TEXT("Get"), TEXT("Get <key> - a setting's value (Settings lists the keys)."));
+	Add(TEXT("Set"), TEXT("Set <key> <value> - sets a setting, puts it in force and saves it."));
+	for (const FString& Key : FScctSettingsConsole::Keys())
+	{
+		Add(Key, TEXT("<value> - a setting (alone: its value)."));
+	}
+	AutoCompleteList.Sort();
+	bIsRuntimeAutoCompleteUpToDate = true;
+#endif
 }
 
 #if UE_ALLOW_EXEC_COMMANDS

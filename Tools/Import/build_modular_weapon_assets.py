@@ -9,7 +9,7 @@ from build_merc_optic_cap import build, save_mesh
 from scct_attachment_finishes import finish
 
 
-def build_attachments(pack_root, pistol_only=False):
+def build_attachments(pack_root, pistol_only=False, suppressor_only=False):
     path = pack_root / "shared/chars/OpenScctRifles/m4a1s.glb"
     data = path.read_bytes()
     json_length = struct.unpack_from("<I", data, 12)[0]
@@ -61,15 +61,18 @@ def build_attachments(pack_root, pistol_only=False):
         save_mesh(mesh, name, triangles, finishes)
 
     meshes = {m["name"]: m["primitives"] for m in model["meshes"]}
+    suppressor = [p for p in meshes["m4a1s"] if materials[p["material"]]["name"].endswith(".Suppressor")]
+    if suppressor_only:
+        accessory("SM_MercSuppressor", suppressor, (.55, .096, 0))
+        return
     # Centres are in the game model's bind pose. Socket X follows the barrel.
     accessory("SM_MercPistolRedDot", meshes["MicroRedDot"], (.118, .1763, 0), compact_dot=True)
     if pistol_only:
         return
     build(rifle_dot_only=True)
-    accessory("SM_MercSuppressor", [p for p in meshes["m4a1s"] if materials[p["material"]]["name"].endswith(".Suppressor")],
-              (.55, .096, 0))
+    accessory("SM_MercSuppressor", suppressor, (.55, .096, 0))
     build(torch_only=True)
 
 
 if __name__ == "__main__":
-    build_attachments(Path(sys.argv[1]), "--pistol-dot-only" in sys.argv[2:])
+    build_attachments(Path(sys.argv[1]), "--pistol-dot-only" in sys.argv[2:], "--suppressor-only" in sys.argv[2:])

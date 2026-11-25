@@ -171,7 +171,7 @@ def suppressor(material):
             normals.append([0,math.cos(angle),math.sin(angle)]);uv.append([i/48,k/(len(profile)-1)])
     for k in range(len(profile)-1):
         for i in range(48):
-            a=k*49+i;b=a+49;indices.extend([[a,b,a+1],[a+1,b,b+1]])
+            a=k*49+i;b=a+49;indices.extend([[a,a+1,b],[a+1,b+1,b]])  # counter-clockwise from outside, as glTF requires
     return (60,material,np.array(points),np.array(normals),np.array(uv),np.array(indices).reshape(-1,1))
 
 

@@ -161,7 +161,11 @@ def precision_image(root):
     g.material.set_editor_property("translucency_lighting_mode",
                                    ue.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
     g.material.set_editor_property("two_sided", True)
-    g.material.set_editor_property("translucency_pass", ue.MaterialTranslucencyPass.MTP_BEFORE_DOF)
+    # The maps' glass, water and haze sheets are drawn after depth of field, over everything drawn before it and tested
+    # only against opaque depth. Drawn before depth of field, the picture had the world's glass laid over it unmagnified
+    # (the Sea Tunnel's panes over the scope's view of the tunnel, without the water). In the same pass the nearer lens
+    # sorts in front of them.
+    g.material.set_editor_property("translucency_pass", ue.MaterialTranslucencyPass.MTP_AFTER_DOF)
     uv = g.node(ue.MaterialExpressionTextureCoordinate)
     # Bend straight lines only near the rim. Sampling inward keeps the edge inside
     # the captured scene at every magnification and preserves the centre alignment.

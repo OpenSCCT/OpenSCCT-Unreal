@@ -700,8 +700,8 @@ $log = if ($LASTEXITCODE -eq 0 -and $previous) { git -C $repo log --no-merges "$
 $notes = @($title, '', "Includes the Unreal-owned simulation ($runtimeVersion) and local content setup.", '',
     '## Changes', '') + $log + @('', '## Maps', '',
     'Open the Unreal front end and choose Set up from Steam to build your local content.', '', '## Download', '',
-    $(if ($uploadZip) { 'Download the Windows game ZIP, extract it and run OpenSCCTUnreal.exe.' } else { 'Install and update through the OpenSCCT launcher: the Windows game is too large for a single download here.' }) +
-    ' The Linux and Windows server archives run independently.')
+    $(if ($uploadZip) { 'Download the Windows game ZIP, extract it and run OpenSCCTUnreal.exe. The Linux and Windows server archives run independently.' }
+      else { 'Install and update through the OpenSCCT launcher: the Windows game is too large for a single download here. The Linux and Windows server archives run independently.' }))
 Write-Text (Join-Path $Out 'notes.md') ($notes -join "`n")
 
 if (-not $Local) {

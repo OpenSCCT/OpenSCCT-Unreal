@@ -136,6 +136,11 @@ internal sealed class MercFirstPerson
             localWeaponView && _trackedRifle is not null && ReferenceEquals(weapon, _trackedRifle), time);
     }
 
+    // How strongly the shot clip moves a rifle without MercRifleRecoil (AK-47, compact SMG) from the hip. The precision
+    // rifles keep theirs: it works their bolt.
+    private const float HipShotClipScale = .5f;
+    private ChannelPose[] _hipShot = [];
+
     private bool DrawWeapon(SWeaponDefense weapon, int shotCount, float dt, float alpha, ref BridgeFirstPerson view,
         float aimBlend = 0f, bool useRifleRecoil = false, double time = 0)
     {
@@ -173,6 +178,14 @@ internal sealed class MercFirstPerson
             var skeleton = loaded.Model.ActorToSkeleton;
             removeClipKick = skeleton * loaded.Applier.ApplyWithAnchor(channels, SWeaponDefense.ACTIONCHANNEL,
                 loaded.Model.MuzzleBone) * skeleton.AffineInverse();
+        }
+        else if (weapon is MercRifle and not (RecoilRecoveryRifle or PrecisionRifle) && action == weapon.AFirstShooSt && aimBlend < 1f)
+        {
+            // The other rifles' shot clip moves the whole gun. From the hip it is drawn weaker (MercRifleRecoil's
+            // HipMotionScale is the M4 family's), and at full strength once shouldered, where the sights follow it.
+            _hipShot = channels.ToArray();
+            _hipShot[SWeaponDefense.ACTIONCHANNEL].Alpha *= float.Lerp(HipShotClipScale, 1f, Math.Clamp(aimBlend, 0f, 1f));
+            loaded.Applier.Apply(_hipShot);
         }
         else
         {

@@ -9,6 +9,9 @@ namespace OpenScct.UnrealBridge.Equipment;
 internal struct MercRifleRecoil
 {
     private const float HipSwingGain = .75f;
+    // The whole hip pose (rearward push, lift, climb, swing and bank) beside the shouldered one: at full scale the
+    // rifle jumped around the picture in sustained hip fire. The aimed pose is kept as it is.
+    private const float HipMotionScale = .45f;
 
     // Timing and extrema of the M4 position and rotation animation tracks.
     // Position is arranged in bridge model space (forward, up, right). Angles are pitch, yaw, roll.
@@ -81,7 +84,7 @@ internal struct MercRifleRecoil
         var aimed = new Pose(float.Lerp(3, 4, rear), -float.Lerp(.1f, .3f, lift), float.Lerp(.5f, 1.5f, pitch) * .85f,
             (yawLeft ? float.Lerp(-.5f, -.4f, yaw) : float.Lerp(.4f, .5f, yaw)) * 1.20f,
             rollLeft ? float.Lerp(-1.5f, .3f, roll) : float.Lerp(.4f, 1.6f, roll));
-        Pose motion = Pose.Blend(hip, aimed, _aim);
+        Pose motion = Pose.Blend(Scaled(hip, HipMotionScale), aimed, _aim);
         // Keep the rearward impulse at the hip, but reduce the visible climb, lateral swing and banking.
         // Restore the sighted profile progressively as the shoulder animation seats the stock.
         float swing = float.Lerp(HipSwingGain, 1f, _aim);
@@ -90,6 +93,9 @@ internal struct MercRifleRecoil
         _amplitude = new(motion.RearCm * 1.05f * (_opening ? 1f : 1.2f), motion.UpCm * 1.05f * swing,
             motion.Pitch * (_opening ? 1f : 2.2f) * swing, motion.Yaw * swing, motion.Roll * (_opening ? 1f : 1.5f) * swing);
     }
+
+    private static Pose Scaled(Pose pose, float scale) =>
+        new(pose.RearCm * scale, pose.UpCm * scale, pose.Pitch * scale, pose.Yaw * scale, pose.Roll * scale);
 
     private static float Random(ref uint state)
     {

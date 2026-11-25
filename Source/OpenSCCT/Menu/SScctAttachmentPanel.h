@@ -19,7 +19,11 @@ public:
 private:
 	int32 PointsUsed(int32 Selection) const;
 	int32 SelectionAfterToggle(int32 Index) const;
-	FString RowLabel(int32 Index) const;
+	/** One attachment: its slot, name, effect and cost, and the action or what it still needs. */
+	TSharedRef<SWidget> MakeCard(int32 Index);
+	/** How far the kills are towards unlocking it, 0..1. */
+	float KillShare(int32 Index) const;
+	FString ActionLabel(int32 Index) const;
 	bool CanToggle(int32 Index) const;
 	void Toggle(int32 Index);
 	EActiveTimerReturnType WatchProgress(double, float);

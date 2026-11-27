@@ -4,7 +4,7 @@ import unreal
 from scct_materials import FLOAT1, FLOAT2
 
 
-def coat_sight_glass(g, coords, *, translucency_pass, scope_handoff=False, magnification=1.0):
+def coat_sight_glass(g, coords, *, translucency_pass, scope_handoff=False):
     material = g.material
     material.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
     material.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
@@ -43,7 +43,7 @@ def coat_sight_glass(g, coords, *, translucency_pass, scope_handoff=False, magni
         float edge = saturate((radius - .72) / .28);
         float edge2 = edge * edge;
         float lip = 1.0 - edge;
-        float remapDistance = radius * (1.0 - rcp(Magnification)) + 3.0 * edge2 * edge2 * lip * lip;
+        float remapDistance = 3.0 * edge2 * edge2 * lip * lip;
         float2 lensOffset = -C.xy * (Pane * remapDistance / max(radius, 1e-5));
 
         // Invert the projected aperture's Jacobian, including rotation and foreshortening at the hip.
@@ -59,7 +59,7 @@ def coat_sight_glass(g, coords, *, translucency_pass, scope_handoff=False, magni
         float outputWidth = View.ViewSizeAndInvSize.x / max(View.ViewResolutionFraction, 1e-4);
         float distortionScale = max(.00023 * outputWidth * abs(View.ViewToClip[0][0]), 1e-4);
         return pixels * float2(1,-1) * View.ViewSizeAndInvSize.zw / distortionScale;
-    """, FLOAT2, C=coords, Pane=pane, Magnification=g.node(unreal.MaterialExpressionConstant, r=magnification))
+    """, FLOAT2, C=coords, Pane=pane)
     g.output(bend, unreal.MaterialProperty.MP_REFRACTION)
     # Explicit Substrate replaces the editor's legacy conversion node and its internal connections.
     errors = unreal.MaterialEditingLibrary.recompile_material(material)

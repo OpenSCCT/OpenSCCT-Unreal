@@ -26,7 +26,7 @@ REQUIRED = {WEAPONS + name: slots(*materials) for name, materials in {
     "SM_MercOpticHousing": ("OpticRubber", "OpticAnodized"),
     "SM_MercPistolRedDot": (*HOUSING, "OpticLens", "M_ScctAcogChevron"),
     "SM_MercRailModule": RAIL,
-    "SM_MercRedDot": ("OpticRubber", "OpticAnodized", "M_ScctAcogChevron"),
+    "SM_MercRedDot": (*HOUSING, "OpticLens", "OpticReticle"),
     "SM_MercSuppressor": ("Suppressor",),
     "SM_MercTorch": RAIL,
 }.items()}

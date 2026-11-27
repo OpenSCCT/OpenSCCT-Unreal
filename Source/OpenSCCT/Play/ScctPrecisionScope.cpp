@@ -160,9 +160,10 @@ void AScctFirstPersonView::UpdatePrecisionImage(UStaticMeshComponent* Optic, con
 	// angular size by the current optical power to get the square capture's field of view.
 	const float HalfTan = Radius * SightFocalScale / (FMath::Max(Depth, 1.0f) * Power);
 	ScopeCapture->FOVAngle = FMath::Clamp(FMath::RadiansToDegrees(2.0f * FMath::Atan(HalfTan)), .1f, 120.0f);
-	const FVector WorldAxis = ProjectSocket(Eye + Glass.GetRotation().GetForwardVector(), 1.f) - Eye;
-	const FVector WorldUp = ProjectSocket(Eye + Glass.GetRotation().GetUpVector(), 1.f) - Eye;
-	ScopeCapture->SetWorldLocationAndRotation(Eye, FRotationMatrix::MakeFromXZ(WorldAxis, WorldUp).Rotator());
+	// Shots leave along the view, not along the optic: the posed rifle tilts the optic's axis a little, and through
+	// the magnification that put the impacts well below the reticle. Look along the camera, so the reticle at the
+	// picture's centre is where the shots land (a zeroed sight).
+	ScopeCapture->SetWorldLocationAndRotation(Eye, FRotationMatrix::MakeFromXZ(Camera->GetForwardVector(), Camera->GetUpVector()).Rotator());
 	ScopeCapture->bCameraCutThisFrame = !bScopeCapturing;
 	ScopeCapture->CaptureSceneDeferred();
 	ScopeImage->SetVectorParameterValue(EyeBox, FLinearColor(Pupil.X, Pupil.Y, 0.f, 0.f));

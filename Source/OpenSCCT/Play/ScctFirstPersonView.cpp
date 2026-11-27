@@ -10,6 +10,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "OpenSCCT.h"
+#include "Play/ScctMercOpticCap.h"
 #include "Play/ScctEquipmentData.h"
 #include "Play/ScctEquipmentModels.h"
 #include "Play/ScctExposure.h"
@@ -57,6 +58,9 @@ AScctFirstPersonView::AScctFirstPersonView()
 
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
+	MercOpticCap = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MercOpticCap"));
+	MercOpticCap->SetupAttachment(Root);
+	ScctMercOpticCap::Configure(*MercOpticCap);
 
 	FlashRoot = CreateDefaultSubobject<USceneComponent>(TEXT("FlashRoot"));
 	FlashRoot->SetupAttachment(Root);
@@ -102,6 +106,10 @@ void AScctFirstPersonView::AddReferencedObjects(UObject* InThis, FReferenceColle
 {
 	AScctFirstPersonView* View = CastChecked<AScctFirstPersonView>(InThis);
 	View->CloakLook.AddReferencedObjects(Collector);
+	for (FSightBinding& Binding : View->SightBindings)
+	{
+		Collector.AddReferencedObject(Binding.Original);
+	}
 	Super::AddReferencedObjects(InThis, Collector);
 }
 
@@ -213,7 +221,7 @@ void AScctFirstPersonView::SetStockSight(EStockSight Mode)
 
 	// All five MicroRedDot material families are exclusive to the authored M4 optic.
 	// Walk every slot: import can split the shell over several slots or follower components.
-	Parts[0].ForEachMesh([this](UMeshComponent& Component)
+	Parts[0].ForEachMesh([this, Mode](UMeshComponent& Component)
 	{
 		UPoseableMeshComponent* Mesh = Cast<UPoseableMeshComponent>(&Component);
 		if (!Mesh) return;
@@ -222,6 +230,8 @@ void AScctFirstPersonView::SetStockSight(EStockSight Mode)
 		{
 			const FString Name = Slots[Slot].ToString();
 			if (!Name.StartsWith(TEXT("OpenScctRifles_Optic"))) continue;
+			if (Mode == EStockSight::ReplaceHousing && (Name.StartsWith(TEXT("OpenScctRifles_OpticLens"))
+				|| Name.StartsWith(TEXT("OpenScctRifles_OpticReticle")))) continue;
 			for (int32 Lod = 0; Lod < Mesh->GetNumLODs(); ++Lod)
 			{
 				if (Mesh->IsMaterialSectionShown(Slot, Lod))
@@ -232,6 +242,54 @@ void AScctFirstPersonView::SetStockSight(EStockSight Mode)
 			}
 		}
 	});
+}
+
+void AScctFirstPersonView::SetM4SightGlass(bool bEnabled)
+{
+	if (bEnabled == bM4SightGlass)
+	{
+		return;
+	}
+	bM4SightGlass = bEnabled;
+	if (!bEnabled)
+	{
+		for (const FSightBinding& Binding : SightBindings)
+		{
+			if (UMeshComponent* Mesh = Binding.Mesh.Get())
+			{
+				// The suit snapshots the underlying materials. Release its snapshot before changing a slot.
+				CloakLook.Apply(*Mesh, 0.0f);
+				if (Mesh->GetMaterial(Binding.Slot) == M4SightGlass)
+				{
+					Mesh->SetMaterial(Binding.Slot, Binding.Original);
+				}
+			}
+		}
+		SightBindings.Reset();
+		return;
+	}
+	if (!M4SightGlass)
+	{
+		M4SightGlass = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/OpenSCCT/Materials/M_ScctMercSightLens.M_ScctMercSightLens"), nullptr, LOAD_NoWarn);
+	}
+	if (M4SightGlass)
+	{
+		static const FName LensSlot(TEXT("OpenScctRifles_OpticLens"));
+		Parts[0].ForEachMesh([this](UMeshComponent& Mesh)
+		{
+			const TArray<FName> Slots = Mesh.GetMaterialSlotNames();
+			for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
+			{
+				if (Slots[Slot] == LensSlot)
+				{
+					CloakLook.Apply(Mesh, 0.0f);
+					SightBindings.Add({&Mesh, Slot, Mesh.GetMaterial(Slot)});
+					Mesh.SetMaterial(Slot, M4SightGlass);
+				}
+			}
+		});
+	}
 }
 
 void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentModels& Models, const UScctWeaponSet* Weapons,
@@ -247,6 +305,7 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 	const bool bAcog = (Motion.AttachmentMask & EScctWeaponAttachment::Acog) != 0;
 	const bool bHasDot = !bAcog && (Motion.AttachmentMask & EScctWeaponAttachment::RedDot) != 0;
 	const bool bHasOptic = bHasDot || bAcog;
+	const bool bM4Sight = bM4 && bHasDot;
 	const float Aim = Player && View.Kind == EScctFirstPersonKind::Merc ? Player->GetLookView().RifleAimBlend : 0.0f;
 	if (bMercWeapon)
 	{
@@ -257,8 +316,7 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 		WeaponFrame = MercWeaponPose(Model, Aim, Speed, bFresh, Motion, DeltaSeconds) * Camera;
 	}
 	const float ScopePower = Player && View.Kind == EScctFirstPersonKind::Merc && !bHasDot ? Player->GetLookView().ScopeLensPower : 0.0f;
-	const bool bRifleDot = bMercWeapon && bHasDot && !Models.Name(Api, View.Parts[0].Mesh).StartsWith(TEXT("OpenScctSidearms."));
-	UCameraComponent* Lens = (bRifleDot || ScopePower > 0.0f) && ViewPawn ? ViewPawn->FindComponentByClass<UCameraComponent>() : nullptr;
+	UCameraComponent* Lens = (bM4Sight || ScopePower > 0.0f) && ViewPawn ? ViewPawn->FindComponentByClass<UCameraComponent>() : nullptr;
 	// The raised precision eyepieces fill about 46% of the viewport height at their
 	// authored eye relief. Only the weapon uses this focal length.
 	SetSightProjection(Lens, Aim, ScopePower > 0.0f ? 0.194f : 0.260f);
@@ -277,6 +335,11 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 	}
 	MercWeaponActor = bMercWeapon ? View.ActorId : 0;
 	if (!bM4 || PartMeshes[0] != View.Parts[0].Mesh) SetStockSight(EStockSight::Visible);
+	if (!bM4Sight || (PartCount > 0 && PartMeshes[0] != View.Parts[0].Mesh))
+	{
+		SetM4SightGlass(false);
+		ScctMercOpticCap::Update(*MercOpticCap, nullptr);
+	}
 	SetActorTransform(WeaponFrame);
 	LastCamera = Camera;
 	bHasMuzzle = false;
@@ -324,7 +387,9 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 		}
 		if (Index == 0 && bM4)
 		{
-			SetStockSight(EStockSight::Removed);
+			SetM4SightGlass(bM4Sight);
+			SetStockSight(!bHasDot ? EStockSight::Removed : bM4Sight && ScctMercOpticCap::HasHousing(*MercOpticCap)
+				? EStockSight::ReplaceHousing : EStockSight::Visible);
 		}
 
 		UPoseableMeshComponent* Body = Drawn.GetBody();
@@ -384,6 +449,10 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 				WeaponFrame.AddToTranslation((Reference.GetLocation() - Selected.GetLocation()) * Aim);
 				SetActorTransform(WeaponFrame);
 			}
+		}
+		if (Index == 0 && bM4Sight)
+		{
+			ScctMercOpticCap::Update(*MercOpticCap, Body);
 		}
 		if (Index == WeaponPart && Drawn.HasReplacement())
 		{
@@ -509,6 +578,8 @@ void AScctFirstPersonView::Hide(float DeltaSeconds)
 {
 	UpdatePrecisionImage(nullptr, nullptr, 0.0f);
 	SetSightProjection(nullptr, 0.0f);
+	ScctMercOpticCap::Update(*MercOpticCap, nullptr);
+	SetM4SightGlass(false);
 	SetStockSight(EStockSight::Visible);
 	MercWeaponActor = 0;
 	if (bShown)

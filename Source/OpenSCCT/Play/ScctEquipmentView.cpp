@@ -379,7 +379,7 @@ void FScctEquipmentView::ChangeAttachmentMeshes(int32 Mask)
 	{
 		// The imported M4 already includes the red-dot body in its skinned meshes.
 		OpticMesh = bEyeModel && MountProfile->bPistol ? TEXT("SM_MercPistolRedDot") : TEXT("SM_MercRedDot");
-		if (bNativeM4 && !bEyeModel) OpticMesh = nullptr;
+		if (bNativeM4) OpticMesh = nullptr;
 	}
 	SetPart(AccessoryOptic, OpticMesh);
 	SetPart(AccessorySuppressor, bSuppressorInstalled && !bNativeM4 && !MountProfile->bIntegralSuppressor ? TEXT("SM_MercSuppressor") : nullptr);
@@ -450,13 +450,6 @@ void FScctEquipmentView::UpdateRailModule(int32 AttachmentMask)
 	const FVector Ocular = bDefaultSight ? MountProfile->DefaultOcular
 		: MountProfile->Iron + MountProfile->OpticRailOffset + FVector(OpticX, 0, MountProfile->DotHeight);
 	Place(AccessoryOptic.Get(), Ocular, MountProfile->AccessoryScale);
-	if (bDraw && bEyeModel && MountProfile->bM4 && !Replacement.IsValid() && !bAcog &&
-		(AppliedAttachmentMask & EScctWeaponAttachment::RedDot) && AccessoryOptic.IsValid() && Body->DoesSocketExist(TEXT("ADS")))
-	{
-		FTransform Frame = Body->GetSocketTransform(TEXT("ADS"));
-		Frame.SetScale3D(FVector::OneVector);
-		AccessoryOptic->SetWorldTransform(Frame);
-	}
 	if (AccessorySuppressor.IsValid())
 	{
 		if (bDraw) FindMountFrame(Bore, true);

@@ -13,7 +13,7 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parents[2]
 RUNTIME = PROJECT / "Runtime"
-ASSET_FOLDERS = ("cosmetics", "sidearms", "weapons", "rifles", "sidearm_audio")
+ASSET_FOLDERS = ("cosmetics", "sidearms", "weapons", "rifles", "sidearm_audio", "user_gun_audio")
 SOURCE_PATHS = (
     "content/svmbuild", "tools/scctpkg/scctpkg", "tools/scctpkg/UPSTREAM.md",
     "re/formats/scctformats", "spec/svmap", "shared/SteamVersusMaps.txt",

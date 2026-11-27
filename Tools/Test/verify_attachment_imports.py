@@ -30,7 +30,6 @@ REQUIRED = {WEAPONS + name: slots(*materials) for name, materials in {
     "SM_MercSuppressor": ("Suppressor",),
     "SM_MercTorch": RAIL,
 }.items()}
-REQUIRED[WEAPONS + "SM_MercRedDot"].add("/Game/OpenSCCT/Materials/M_ScctMercSightLens")
 
 
 def cooked(description):
@@ -45,10 +44,10 @@ def cooked(description):
             if match:
                 current.add(match[1].split(".", 1)[0])
     expected = REQUIRED.copy()
-    for name in ("OpticAnodized", "OpticFasteners", "OpticRubber", "Suppressor", "OpticLens"):
+    for name in ("OpticAnodized", "OpticFasteners", "OpticRubber", "Suppressor", "OpticLens", "OpticReticle"):
         texture = "suppressor" if name == "Suppressor" else name
         deps = {ATTACHMENTS + "Textures/" + texture}
-        if name != "OpticLens":
+        if name not in ("OpticLens", "OpticReticle"):
             deps.add("/Game/OpenSCCT/Materials/M_ScctRifleFinish")
         expected[ATTACHMENTS + "OpenScctRifles_" + name] = deps
     for asset, required in expected.items():

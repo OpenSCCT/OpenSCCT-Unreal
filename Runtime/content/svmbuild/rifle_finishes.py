@@ -1,4 +1,5 @@
 """Fit the existing assault-rifle finishes to the painted panels of the four licensed rifles."""
+from functools import lru_cache
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -82,21 +83,43 @@ def _atomic_png(pixels, output):
 
 def install(package, source, patterns=FINISHES):
     """Install only generated colour variants. Both first and third person use the same atlas."""
+    work = finish_work(package, source, patterns)
+    for _, job, _, _ in work:
+        _finish_job(job)
+    return len(work)
+
+
+def finish_work(package, source, patterns=FINISHES):
+    """install's colour variants as cosmetics work items (cosmetics._write_textures): one job per panel and pattern,
+    the jobs of a panel sharing its projection."""
     textures = package / 'textures'
     textures.mkdir(parents=True, exist_ok=True)
-    count = 0
+    work = []
     for weapon, panels in PANELS.items():
-        mesh = SurfaceMesh(source / (weapon + '.glb'))
-        for stem, bounds in panels.items():
-            with Image.open(source / 'textures' / (stem + '.png')) as native:
-                base = np.asarray(native.convert('RGBA'))
-            h, w = base.shape[:2]
-            scale = min(1., 1024 / max(w, h))
-            fitting = projection(mesh, stem, bounds, round(w * scale), round(h * scale))
+        for stem in panels:
             for pattern in patterns:
-                painted, sheen = panel_colour(base, *fitting, pattern)
-                image = textures / f'cosmetic_{pattern}_{stem}.png'
-                _atomic_png(painted, image)
-                _atomic_png(sheen, image.with_suffix('.mask.png'))
-                count += 1
-    return count
+                job = (str(source), str(textures), weapon, stem, pattern)
+                work.append((_finish_job, job, ('rifle', str(source), weapon, stem), 1024 * 1024))
+    return work
+
+
+@lru_cache(maxsize=1)
+def _panel(source, weapon, stem):
+    """A panel's native pixels and its projection (the bake is the expensive part)."""
+    source = Path(source)
+    mesh = SurfaceMesh(source / (weapon + '.glb'))
+    with Image.open(source / 'textures' / (stem + '.png')) as native:
+        base = np.asarray(native.convert('RGBA'))
+    h, w = base.shape[:2]
+    scale = min(1., 1024 / max(w, h))
+    return base, projection(mesh, stem, PANELS[weapon][stem], round(w * scale), round(h * scale))
+
+
+def _finish_job(job):
+    source, textures, weapon, stem, pattern = job
+    base, fitting = _panel(source, weapon, stem)
+    painted, sheen = panel_colour(base, *fitting, pattern)
+    image = Path(textures) / f'cosmetic_{pattern}_{stem}.png'
+    _atomic_png(painted, image)
+    _atomic_png(sheen, image.with_suffix('.mask.png'))
+    return str(image)

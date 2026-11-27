@@ -83,23 +83,26 @@ class CharsStep(Step):
         failed = [f for k, v in stats.items() if isinstance(v, dict) for f in v.get("failed", [])]
         if failed:
             raise ValueError("chars failed: " + "; ".join(failed[:10]))
-        from ..cosmetics import build_all  # noqa: PLC0415
+        from ..cosmetics import _write_textures, paint_work, worker_count  # noqa: PLC0415
 
-        from ..sidearms import install_models
+        from .. import rifles, sidearms
         from ..authored_characters import install_models as install_characters
         from ..spy_viewmodel import install_models as install_spy_viewmodel
         spy_viewmodel = install_spy_viewmodel(out_dir)
         characters = install_characters(out_dir)
         # Keep original primary reload tracks aligned with their gameplay notifies.
-        cosmetics = build_all(out_dir)
-        sidearms = install_models(out_dir)
-        from ..rifles import install_models as install_rifles
-        rifles = install_rifles(out_dir)
+        # The camos, sidearm, sleeve and rifle finishes are independent textures: one pool paints them all.
+        camo_work, cosmetics = paint_work(out_dir)
+        sidearm_work, sidearm_summary = sidearms.prepare_models(out_dir)
+        rifle_work = rifles.prepare_models(out_dir)
+        _write_textures(camo_work + sidearm_work + rifle_work, worker_count())
+        sidearms.finish_models(out_dir, sidearm_work)
+        rifles_summary = rifles.install_models(out_dir, finishes=len(rifle_work))
         from ..weapon_icons import install as install_weapon_icons
         stock_icons = install_weapon_icons(out_dir)
         summary = {"meshes": sum(len(v["meshes"]) for k, v in stats.items() if not k.startswith("_")),
                    "animations": sum(len(v["animations"]) for k, v in stats.items() if not k.startswith("_")),
-                   "cosmetics": cosmetics, "sidearms": sidearms, "authored_characters": characters,
-                   "spy_viewmodel": spy_viewmodel, "rifles": rifles, "stock_weapon_icons": stock_icons,
+                   "cosmetics": cosmetics, "sidearms": sidearm_summary, "authored_characters": characters,
+                   "spy_viewmodel": spy_viewmodel, "rifles": rifles_summary, "stock_weapon_icons": stock_icons,
                    "detail": stats}
         return StepOutput(stats=summary)

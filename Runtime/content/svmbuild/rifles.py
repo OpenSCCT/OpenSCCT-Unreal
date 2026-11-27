@@ -20,9 +20,23 @@ def contextual_clips(path, reference_path):
     write(path,doc,data)
 
 
-def install_models(chars_dir):
+def prepare_models(chars_dir):
+    """Installs the rifle art; returns the finish jobs (cosmetics work items, run before install_models)."""
+    from .rifle_finishes import finish_work
     target = chars_dir / 'OpenScctRifles'
     shutil.copytree(SOURCE,target,dirs_exist_ok=True,ignore=shutil.ignore_patterns('audio'))
+    return finish_work(target, SOURCE)
+
+
+def install_models(chars_dir, finishes=None):
+    """finishes: how many finish jobs of prepare_models the caller has run (with the sidearms' arm finishes done);
+    None installs and paints them here."""
+    if finishes is None:
+        from .cosmetics import _write_textures, worker_count
+        work = prepare_models(chars_dir)
+        _write_textures(work, worker_count())
+        finishes = len(work)
+    target = chars_dir / 'OpenScctRifles'
     # Body finishes use the same cloth atlas as the pistols, with a local URI.
     for image in (chars_dir/'OpenScctSidearms/textures').glob('cosmetic_*OpenScctSidearms_arms_arms_baseColor.png'):
         prefix,base=image.name.split('OpenScctSidearms_',1)
@@ -37,11 +51,10 @@ def install_models(chars_dir):
             render(target/(name+'.glb'), target/'textures'/(name+'_icon.png'))
     split_m4_backup_sight(SOURCE/'m4a1s.glb', target)
     weapons = json.loads((target / 'models.json').read_text(encoding='utf-8'))
-    from .rifle_finishes import install as install_finishes
     return {
         'models': sum((target / (name + suffix + '.glb')).is_file() for name in weapons for suffix in ('', '_first')),
         'icons': sum((target / 'textures' / (name + '_icon.png')).is_file() for name in weapons),
-        'finishes': install_finishes(target, SOURCE),
+        'finishes': finishes,
     }
 
 

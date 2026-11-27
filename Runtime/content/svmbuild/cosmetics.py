@@ -1653,7 +1653,8 @@ _WORKER_BYTES = 1.6 * 1024 ** 3
 
 
 def _available_memory() -> int | None:
-    """Available allocation headroom in bytes, or None if the OS cannot report it."""
+    """Physical memory free now, in bytes (None when it cannot be read). Commit headroom is not counted: Windows grows
+    the page file on demand, and a worker that still runs out raises MemoryError, which _write_textures retries."""
     try:
         if os.name == "nt":
             import ctypes  # noqa: PLC0415
@@ -1669,15 +1670,24 @@ def _available_memory() -> int | None:
             status.dwLength = ctypes.sizeof(_Status)
             if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
                 return None
-            return int(min(status.ullAvailPhys, status.ullAvailPageFile))
+            return int(status.ullAvailPhys)
         return int(os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
     except (AttributeError, OSError, ValueError):
         return None
 
 
-def build_all(chars_dir: Path) -> dict:
-    """Writes every target's camos next to its retail texture (a texture the install lacks is skipped) and a swatch per
-    pattern under chars/thumbs. The work is spread over worker processes."""
+def worker_count() -> int:
+    """Paint processes: one per CPU, as many as the free physical memory holds."""
+    workers = os.cpu_count() or 1
+    free = _available_memory()
+    if free is not None:
+        # A 2048 camo holds about 1.5 GB at its peak; leave room for whatever else is running (the maps' workers).
+        workers = min(workers, int(free * 0.8 // _WORKER_BYTES))
+    return max(1, workers)
+
+
+def paint_work(chars_dir: Path) -> tuple[list, dict]:
+    """The camo and swatch jobs of build_all as _write_textures work items, and build_all's summary."""
     from PIL import Image  # noqa: PLC0415
 
     from . import gunskin  # noqa: PLC0415
@@ -1711,20 +1721,64 @@ def build_all(chars_dir: Path) -> dict:
                 raise ValueError(f'Cannot fit cosmetics: missing mesh for {package}/{stem}')
             jobs.append((str(src), str(tex_dir / f"cosmetic_{pattern}_{stem}.png"), pattern, stem,
                          output_size(package, pattern, w, h), str(mesh_path) if mesh_path else None))
-    jobs.sort(key=lambda j: -j[4][0] * j[4][1])  # the big ones first, so the pool ends evenly
     thumbs_dir = chars_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     spy_mesh = chars_dir / "SPerso" / "ATT_01.glb"
     thumbs = [(p, str(thumbs_dir / f"cosmetic_{p}.png"), str(spy_mesh) if PATTERNS[p][0] == "skeleton" else None)
               for p in PATTERNS if PATTERNS[p][0] != "skeleton" or spy_mesh.is_file()]
-    workers = max(1, min(os.cpu_count() or 1, 12))
-    free = _available_memory()
-    if free is not None:
-        # A 2048 camo holds about 1.5 GB at its peak; leave room for whatever else is running (the maps' workers).
-        workers = max(1, min(workers, int(free * 0.8 // _WORKER_BYTES)))
-    work = [(_paint_job, job) for job in jobs] + [(_thumb_job, job) for job in thumbs]
-    _write_textures(work, workers)
-    return {"camos": len(jobs), "thumbs": len(thumbs), "skipped": skipped}
+    work = [paint_item(job) for job in jobs]
+    work += [(_thumb_job, t, ("thumb", t[2]) if t[2] else None, THUMB_SIZE * THUMB_SIZE) for t in thumbs]
+    return work, {"camos": len(jobs), "thumbs": len(thumbs), "skipped": skipped}
+
+
+def paint_item(job: tuple) -> tuple:
+    """A _paint_job as a _write_textures work item: jobs that share a mesh, texture and size share one layout."""
+    _, _, _, stem, size, mesh_path = job
+    return _paint_job, job, (mesh_path, stem, size) if mesh_path else None, size[0] * size[1]
+
+
+def build_all(chars_dir: Path) -> dict:
+    """Writes every target's camos next to its retail texture (a texture the install lacks is skipped) and a swatch per
+    pattern under chars/thumbs. The work is spread over worker processes."""
+    work, summary = paint_work(chars_dir)
+    _write_textures(work, worker_count())
+    return summary
+
+
+# Jobs a worker runs back to back. Jobs that share a layout (mesh, texture and size) run in the same worker, where the
+# layout bake and fitted gun stay cached (skeleton.bake, gunskin._fitted_gun); a few per batch keeps that reuse while
+# still spreading one texture's finishes over several workers.
+_BATCH = 8
+
+
+def _batches(work) -> list:
+    """The work items ((fn, job) or (fn, job, layout key, weight)) as lists of (fn, job), one layout per list, the
+    heaviest lists first (so the pool ends evenly); items without a layout key run alone."""
+    groups: dict = {}
+    for item in work:
+        fn, job = item[0], item[1]
+        key = item[2] if len(item) > 2 else None
+        weight = item[3] if len(item) > 3 else 0
+        group = groups.setdefault(key if key is not None else ("alone", len(groups)), [weight, []])
+        group[1].append((fn, job))
+    batches = []
+    for weight, items in groups.values():
+        count = -(-len(items) // _BATCH)
+        size = -(-len(items) // count)
+        batches += [(weight * size, items[i:i + size]) for i in range(0, len(items), size)]
+    batches.sort(key=lambda b: -b[0])
+    return [items for _, items in batches]
+
+
+def _run_batch(items) -> list:
+    """Runs one batch in a worker; returns the (fn, job) items that ran out of memory."""
+    missed = []
+    for fn, job in items:
+        try:
+            fn(job)
+        except MemoryError:
+            missed.append((fn, job))
+    return missed
 
 
 def _write_textures(work, workers):
@@ -1734,12 +1788,9 @@ def _write_textures(work, workers):
     retry = []
     context = mp.get_context("spawn")
     with cf.ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
-        futures = {pool.submit(fn, job): (fn, job) for fn, job in work}
+        futures = [pool.submit(_run_batch, items) for items in _batches(work)]
         for future in cf.as_completed(futures):
-            try:
-                future.result()
-            except MemoryError:
-                retry.append(futures[future])
+            retry += future.result()
     # Other map workers and graphics programs can consume memory after the initial budget check.
     # Keep completed textures and repeat only missed outputs with the other paint processes gone.
     if retry:

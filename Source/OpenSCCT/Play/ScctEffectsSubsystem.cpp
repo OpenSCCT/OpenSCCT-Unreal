@@ -1077,8 +1077,10 @@ void UScctEffectsSubsystem::StartActor(FActorFx& Fx, const FScctEffectActor& Rec
 				{
 					Component->SetMaterial(0, StandInMaterial);
 				}
-				// Thin glowing beams and flat puddles throw no shadow.
-				Component->SetCastShadow(Record.Kind != EScctEffectKind::Beam && Record.Kind != EScctEffectKind::Decal);
+				// Thin glowing beams and flat puddles throw no shadow. Nor does a flying flare: its own light burns
+				// at the cartridge's tip and would project the shell as a huge wedge (as the settled cartridge avoids).
+				Component->SetCastShadow(Record.Kind != EScctEffectKind::Beam && Record.Kind != EScctEffectKind::Decal
+					&& !GetName(Record.ClassId).EndsWith(TEXT("SProjFlare")));
 				Component->SetVisibility(false);
 				MeshUsed[Index] = true;
 				Fx.Mesh = Index;

@@ -306,6 +306,10 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 	const bool bHasDot = !bAcog && (Motion.AttachmentMask & EScctWeaponAttachment::RedDot) != 0;
 	const bool bHasOptic = bHasDot || bAcog;
 	const bool bM4Sight = bM4 && bHasDot;
+	// Every other rifle carries the M4's optic as a separate part (SM_MercRedDot). It gets the same raised focal
+	// length and the same eye relief, so its aperture, glass and dot look as they do on the M4.
+	const bool bRifleDot = bMercWeapon && bHasDot && !bM4
+		&& !Models.Name(Api, View.Parts[0].Mesh).StartsWith(TEXT("OpenScctSidearms."));
 	const float Aim = Player && View.Kind == EScctFirstPersonKind::Merc ? Player->GetLookView().RifleAimBlend : 0.0f;
 	if (bMercWeapon)
 	{
@@ -316,7 +320,7 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 		WeaponFrame = MercWeaponPose(Model, Aim, Speed, bFresh, Motion, DeltaSeconds) * Camera;
 	}
 	const float ScopePower = Player && View.Kind == EScctFirstPersonKind::Merc && !bHasDot ? Player->GetLookView().ScopeLensPower : 0.0f;
-	UCameraComponent* Lens = (bM4Sight || ScopePower > 0.0f) && ViewPawn ? ViewPawn->FindComponentByClass<UCameraComponent>() : nullptr;
+	UCameraComponent* Lens = (bM4Sight || bRifleDot || ScopePower > 0.0f) && ViewPawn ? ViewPawn->FindComponentByClass<UCameraComponent>() : nullptr;
 	// The raised precision eyepieces fill about 46% of the viewport height at their
 	// authored eye relief. Only the weapon uses this focal length.
 	SetSightProjection(Lens, Aim, ScopePower > 0.0f ? 0.194f : 0.260f);
@@ -448,6 +452,17 @@ void AScctFirstPersonView::Present(const FScctEquipmentApi& Api, FScctEquipmentM
 				}
 				WeaponFrame.AddToTranslation((Reference.GetLocation() - Selected.GetLocation()) * Aim);
 				SetActorTransform(WeaponFrame);
+				if (bRifleDot && Drawn.FindAttachmentSight(Selected))
+				{
+					// The ADS sockets of the other rifles put the optic about 11 cm from the eye, where the M4's housing
+					// fills the screen. Push the gun out along the view to the M4's eye relief (its housing sits 25.8 cm
+					// out at full aim), so the shared optic has the M4's proportions.
+					constexpr double M4Relief = 25.8;
+					const FVector Forward = Camera.GetRotation().GetForwardVector();
+					const double Relief = FVector::DotProduct(Selected.GetLocation() - Camera.GetLocation(), Forward);
+					WeaponFrame.AddToTranslation(Forward * ((M4Relief - Relief) * Aim));
+					SetActorTransform(WeaponFrame);
+				}
 			}
 		}
 		if (Index == 0 && bM4Sight)

@@ -36,7 +36,7 @@ def save_mesh(mesh, name, triangle_count, materials, sockets=()):
            (name, triangle_count, asset.get_num_sections(0), [m.get_name() for m in materials], asset.get_bounding_box()))
 
 
-def build(torch_only=False, *, include_sight=True):
+def build(torch_only=False, *, include_sight=True, rifle_dot_only=False):
     materials = [finish(suffix) for suffix in ("OpticRubber", "OpticAnodized")]
     mesh = ue.DynamicMesh()
     vertices, normals, triangles, uvs = [], [], [], []
@@ -99,7 +99,7 @@ def build(torch_only=False, *, include_sight=True):
         lathe([(lo, .185), (lo+.025, .215), (hi-.025, .215), (hi, .185), (hi, .105), (lo, .105)], 24, hinge)
     lathe([(-.78, .055), (-.77, .111), (.77, .111), (.78, .055), (.78, .025), (-.78, .025)], 16, hinge)
     flush(0)
-    if not torch_only and include_sight:
+    if not torch_only and include_sight and not rifle_dot_only:
         save_mesh(mesh, "SM_MercOpticCap", triangle_count, materials[:1])
 
     # The sight looks through the two existing animated panes at X -3.0 and +2.7. Tapering
@@ -156,8 +156,31 @@ def build(torch_only=False, *, include_sight=True):
     mount_tier(2.0, 1.90, -5.27, -4.85, .12)
     flush(1)
 
-    if not torch_only and include_sight:
+    if not torch_only and include_sight and not rifle_dot_only:
         save_mesh(mesh, "SM_MercOpticHousing", triangle_count, materials)
+
+    if rifle_dot_only:
+        def disc(x, radius, slot):
+            vertices.append(ue.Vector(x, 0, 0))
+            normals.append(ue.Vector(-1, 0, 0))
+            uvs.append(ue.Vector2D(.5, .5))
+            for i in range(72):
+                angle = math.tau * i / 72
+                y, z = math.cos(angle), math.sin(angle)
+                vertices.append(ue.Vector(x, radius*y, radius*z))
+                normals.append(ue.Vector(-1, 0, 0))
+                uvs.append(ue.Vector2D(.5 + .5*y, .5 + .5*z))
+                triangles.append(ue.IntVector(0, 1+(i+1)%72, 1+i))
+            flush(slot)
+
+        surfaces = [ue.load_asset("/Game/OpenSCCT/Materials/M_ScctRifleDotLens"),
+                    ue.load_asset("/Game/OpenSCCT/Weapons/Materials/M_ScctAcogChevron")]
+        if not all(surfaces):
+            raise RuntimeError("Missing coated glass or reticle material")
+        disc(2.67, 1.45, 2)
+        disc(2.65, .04, 3)
+        save_mesh(mesh, "SM_MercRedDot", triangle_count, materials + surfaces)
+        return
 
     # The accessory's local origin sits on the outer surface of the virtual rifle. Both game
     # views use the same model-space frame. Its two emitters follow the recessed faces below.
@@ -222,4 +245,5 @@ def build(torch_only=False, *, include_sight=True):
 
 
 if __name__ == "__main__":
-    build()
+    import sys
+    build(rifle_dot_only="--rifle-dot" in sys.argv)
